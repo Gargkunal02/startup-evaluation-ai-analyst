@@ -16,13 +16,15 @@ INTRO = (
 
 def refresh_dropdown():
     items = db.list_startups()
-    return [gr.Dropdown.update(choices=[f"{i['name']} (#{i['id']})" for i in items])]
+    return [gr.Dropdown(choices=[f"{i['name']} (#{i['id']})" for i in items], interactive=True)]
 
-def add_startup(name, pdf_file):
-    if not name or not pdf_file:
+def add_startup(name, pdf_files):
+    if not name or not pdf_files:
         return "❌ Please provide both a name and a PDF.", *refresh_dropdown()
     try:
-        parsed_text = parse_pdf(pdf_file.name)
+        parsed_text = ""
+        for pdf_file in pdf_files:
+            parsed_text += parse_pdf(pdf_file.name)
     except Exception as e:
         parsed_text = f"[Parser failed: {e}]"
     sid = db.add_startup(name=name, description=parsed_text)
@@ -47,7 +49,8 @@ def show_dashboard(selected_label):
         return (gr.Markdown.update(value="Select a valid startup."),
                 gr.HighlightedText.update(value=[]),
                 gr.Plot.update(None),
-                gr.Plot.update(None))
+                gr.Plot.update(None),
+                gr.TextArea.update(None))
     startup = db.get_startup(sid)
     analysis = run_multi_agent_analysis(startup)
 
@@ -56,7 +59,7 @@ def show_dashboard(selected_label):
     color = "#0ea55b" if good else "#ef4444"
     navbar_md = f"<div style='padding:8px;border-radius:8px;background:{color};color:white;font-weight:700'>{badge}</div>"
 
-    reasons = analysis.get("top_reasons", [])
+    reasons = analysis.get("top_reasons", []) or ["It is not a good invetment given the current market trend."]
     reasons_pairs = [(r, f"reason_{i}") for i, r in enumerate(reasons, 1)]
 
     profits = startup.get("profits") or [10, -5, 15, 22, -3, 30]
@@ -66,7 +69,7 @@ def show_dashboard(selected_label):
     fig1 = plot_profit_loss(profits)
     fig2 = plot_funding_vs_valuation(funding, valuation)
 
-    return gr.Markdown.update(value=navbar_md), gr.HighlightedText.update(value=reasons_pairs), fig1, fig2
+    return gr.Markdown(value=navbar_md), gr.HighlightedText(value=reasons_pairs), fig1, fig2, gr.TextArea(value=analysis, lines=30)
 
 with gr.Blocks(css="footer {visibility: hidden}") as demo:
     gr.Markdown(f"# {APP_TITLE}")
@@ -76,7 +79,7 @@ with gr.Blocks(css="footer {visibility: hidden}") as demo:
         with gr.Column(scale=1):
             gr.Markdown("### ➕ Add Startup")
             name_in = gr.Textbox(label="Startup Name", placeholder="Acme AI")
-            pdf_in = gr.File(label="Upload Pitch Deck / PDF", file_types=[".pdf"])
+            pdf_in = gr.File(file_count="multiple", label="Upload Pitch Deck / PDF", file_types=[".pdf"])
             add_btn = gr.Button("Add")
             add_status = gr.Textbox(label="Status", interactive=False)
 
@@ -84,16 +87,16 @@ with gr.Blocks(css="footer {visibility: hidden}") as demo:
                 refresh_dropdown, outputs=[]
             )
 
-            gr.Markdown("### 🔎 Search")
-            query = gr.Textbox(label="Query", placeholder="language model, fintech, 2024...")
-            search_btn = gr.Button("Search")
-            search_out = gr.Textbox(label="Results", lines=8)
+            # gr.Markdown("### 🔎 Search")
+            # query = gr.Textbox(label="Query", placeholder="language model, fintech, 2024...")
+            # search_btn = gr.Button("Search")
+            # search_out = gr.Textbox(label="Results", lines=8)
 
-            search_btn.click(search_startups, [query], [search_out])
+            # search_btn.click(search_startups, [query], [search_out])
 
         with gr.Column(scale=1):
             gr.Markdown("### 📋 Select Startup")
-            dd = gr.Dropdown(label="Startups", choices=[f"{i['name']} (#{i['id']})" for i in db.list_startups()])
+            dd = gr.Dropdown(label="Startups", choices=[f"{i['name']} (#{i['id']})" for i in db.list_startups()], interactive=True)
             go = gr.Button("Open Dashboard")
 
             gr.Markdown("### 📊 Dashboard")
@@ -101,8 +104,9 @@ with gr.Blocks(css="footer {visibility: hidden}") as demo:
             reasons = gr.HighlightedText(label="Top Reasons")
             chart1 = gr.Plot(label="Profit / Loss Over Time")
             chart2 = gr.Plot(label="Funding vs Valuation")
+            analysis = gr.TextArea(label="Analysis", lines=30)
 
-            go.click(show_dashboard, [dd], [navbar, reasons, chart1, chart2])
+            go.click(show_dashboard, [dd], [navbar, reasons, chart1, chart2, analysis])
 
 if __name__ == "__main__":
     demo.launch()
